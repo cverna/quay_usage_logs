@@ -1,23 +1,22 @@
 import requests
 import os
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 # --- Configuration ---
 QUAY_API_BASE_URL = "https://quay.io/api/v1"
 REPOSITORY_PATH = "fedora/fedora-bootc" # The repository you want to get logs from
-LOGS_PAGE_SIZE = 100 # Desired number of log entries per page (try 100, API max may vary)
 
-def get_quay_repository_logs(api_token, repository_path, start_time_str=None, end_time_str=None, page_size=100):
+def get_quay_repository_logs(api_token, repository_path, start_time_str=None, end_time_str=None):
     """
     Fetches usage logs for a specific Quay.io repository.
+    Relies on the API's default page size.
 
     Args:
         api_token (str): Your Quay.io OAuth2 access token.
         repository_path (str): The full path of the repository (e.g., "namespace/reponame").
-        start_time_str (str, optional): The start time for logs.
-        end_time_str (str, optional): The end time for logs.
-        page_size (int, optional): The desired number of logs per page.
+        start_time_str (str, optional): The start time for logs (e.g., "MM/DD/YYYY" in UTC).
+        end_time_str (str, optional): The end time for logs (e.g., "MM/DD/YYYY" in UTC).
 
     Returns:
         list: A list of log entries (dictionaries), or None if an error occurs.
@@ -28,53 +27,65 @@ def get_quay_repository_logs(api_token, repository_path, start_time_str=None, en
         "Accept": "application/json"
     }
 
-    # Parameters for the initial request
-    params = {"limit": page_size}
+    params = {}
     if start_time_str:
         params["starttime"] = start_time_str
     if end_time_str:
-        params["endtime"] = end_time_str
+        params["endtime"] = end_time_str # Add endtime to params if provided
 
     all_logs = []
     page_count = 0
 
     print(f"Fetching logs for repository: {repository_path}")
-    if params: # Will now include limit on first call
+    if params:
         print(f"Initial request parameters: {params}")
+    else:
+        # This case should ideally not happen if we always set start/end times
+        print("Initial request with no specific start/end time parameters (fetching recent logs based on API default).")
+
 
     while True:
         page_count += 1
-        if page_count > 1: # For subsequent pages, params might be different
-             print(f"Fetching page {page_count} with params: {params}...")
+        # For logging, truncate long next_page tokens
+        current_request_params_display = params.copy()
+        if "next_page" in current_request_params_display and len(current_request_params_display["next_page"]) > 20:
+            current_request_params_display["next_page"] = current_request_params_display["next_page"][:10] + "..." + current_request_params_display["next_page"][-10:]
+
+        if page_count > 1:
+             print(f"Fetching page {page_count} with params: {current_request_params_display}...")
         else:
-             print(f"Fetching page {page_count}...") # Initial request params already printed
+             print(f"Fetching page {page_count}...")
 
         try:
             response = requests.get(logs_url, headers=headers, params=params)
             response.raise_for_status()
             data = response.json()
 
+
             if "logs" in data and data["logs"]:
                 retrieved_count = len(data['logs'])
                 all_logs.extend(data["logs"])
-                print(f"  Retrieved {retrieved_count} log entries from this page.")
-                # If the API returns fewer than requested, even if there's no next_page,
-                # it might be the end or the API's own internal paging behavior.
+                print(f" starttime {data['start_time']}, endtime {data['end_time']}")
+                # print(f"  Retrieved {retrieved_count} log entries from this page.")
             else:
                 print("  No more log entries found on this page (or 'logs' key missing/empty).")
-                break
 
             if "next_page" in data and data["next_page"]:
                 # For subsequent requests, only use the next_page token.
-                # The next_page token should preserve the context of the original query,
-                # including any limit, starttime, and endtime filters.
+                # The starttime and endtime context should be carried by the next_page token.
                 params = {"next_page": data["next_page"]}
             else:
+                print(f"{data}")
+                print("No Next page found")
                 break
         
         except requests.exceptions.HTTPError as http_err:
             print(f"HTTP error occurred: {http_err}")
             print(f"Response content: {response.text}")
+            if response.status_code == 401:
+                print("Authentication error (401): Please ensure your QUAY_API_TOKEN is valid and has correct permissions.")
+            elif response.status_code == 403:
+                print("Authorization error (403): Your token may not have permission to access logs for this repository, or the specified range/format for time might be incorrect.")
             return None
         except requests.exceptions.RequestException as req_err:
             print(f"Request error occurred: {req_err}")
@@ -88,22 +99,43 @@ def get_quay_repository_logs(api_token, repository_path, start_time_str=None, en
 
 if __name__ == "__main__":
     quay_token = os.environ.get("QUAY_API_TOKEN")
+
     if not quay_token:
         print("Error: QUAY_API_TOKEN environment variable not set.")
-        # ... (rest of the error message)
+        print("Please set it to your Quay.io OAuth2 access token.")
+        print("Example (Linux/macOS): export QUAY_API_TOKEN='your_token_here'")
         exit(1)
 
-    start_time = "30d"
-    end_time = None
+    # --- Define Time Range: Calculate 30 days ago and current date, format as MM/DD/YYYY in UTC ---
+    days_to_fetch_for_start = 5 # This defines the start date relative to the end date
+
+    # End time will be the current UTC date
+    end_datetime_utc = datetime.now(timezone.utc)
+    end_time_param_for_api = end_datetime_utc.strftime('%m/%d/%Y')
     
-    time_range_str = f"_last_{start_time.replace('/', '_')}" if start_time else "" # Sanitize start_time for filename
+    # Start time will be 'days_to_fetch_for_start' days before the end_datetime_utc
+    start_datetime_utc = end_datetime_utc - timedelta(days=days_to_fetch_for_start)
+    start_time_param_for_api = start_datetime_utc.strftime('%m/%d/%Y')
+
+
+    print(f"--- Log Fetch Configuration ---")
+    print(f"Requesting logs for an approximate {days_to_fetch_for_start}-day window.")
+    print(f"Calculated start datetime (UTC): {start_datetime_utc.isoformat()}")
+    print(f"Using starttime API parameter (MM/DD/YYYY format): \"{start_time_param_for_api}\"")
+    print(f"Calculated end datetime (UTC): {end_datetime_utc.isoformat()}")
+    print(f"Using endtime API parameter (MM/DD/YYYY format): \"{end_time_param_for_api}\"")
+    print(f"Relying on API's default page size.")
+    print(f"-----------------------------")
+
+    # --- Define Output Filename ---
+    # Filename still reflects the intent of fetching approximately 30 days
+    time_range_str = f"_from_{start_datetime_utc.strftime('%Y%m%d')}_to_{end_datetime_utc.strftime('%Y%m%d')}"
     output_filename = f"quay_{REPOSITORY_PATH.replace('/', '_')}_logs{time_range_str}.json"
 
-    print(f"Attempting to fetch logs for the period: starttime='{start_time}', endtime='{end_time}'. Page size: {LOGS_PAGE_SIZE}")
+    # --- Fetch Logs ---
     logs = get_quay_repository_logs(quay_token, REPOSITORY_PATH, 
-                                    start_time_str=start_time, 
-                                    end_time_str=end_time, 
-                                    page_size=LOGS_PAGE_SIZE) # Pass page_size
+                                    start_time_str=start_time_param_for_api,
+                                    end_time_str=end_time_param_for_api)
 
     if logs is not None:
         if logs:
@@ -114,6 +146,6 @@ if __name__ == "__main__":
             except IOError as e:
                 print(f"\nError saving logs to file: {e}")
         else:
-            print("No logs found for the specified criteria. No file written.")
+            print("No log entries were returned by the API for the specified criteria. An empty file will not be written.")
     else:
-        print("Failed to retrieve logs. No file written.")
+        print("Failed to retrieve logs due to an error. No file written.")
