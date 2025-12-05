@@ -1,0 +1,80 @@
+name: Daily Quay Usage Logs Collection
+
+on:
+  schedule:
+    # Run daily at 2:00 AM UTC (gets data from previous day)
+    - cron: '0 2 * * *'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  collect-logs:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        # Fetch full history to ensure we can commit changes
+        fetch-depth: 0
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Configure Git
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+
+    - name: Run Quay logs collection
+      env:
+        QUAY_API_TOKEN: ${{ secrets.QUAY_API_TOKEN }}
+      run: |
+        echo "Starting Quay logs collection..."
+
+        # Calculate yesterday's date for data collection
+        YESTERDAY=$(date -u -d "yesterday" +"%Y-%m-%d")
+        echo "Collecting logs for date: ${YESTERDAY}"
+
+        # Run the script with specific date range for yesterday only
+        python get_quay_logs.py --start-date "${YESTERDAY}" --end-date "${YESTERDAY}"
+
+        echo "Logs collection completed for ${YESTERDAY}"
+
+    - name: Check for changes
+      id: verify-changed-files
+      run: |
+        if [ -n "$(git status --porcelain)" ]; then
+          echo "changed=true" >> $GITHUB_OUTPUT
+          echo "Files changed:"
+          git status --porcelain
+        else
+          echo "changed=false" >> $GITHUB_OUTPUT
+          echo "No changes detected"
+        fi
+
+    - name: Add and commit files
+      if: steps.verify-changed-files.outputs.changed == 'true'
+      run: |
+        # Add database and CSV file
+        git add quay_logs.db
+        git add quay_logs.csv
+
+        # Create commit with date information
+        YESTERDAY=$(date -u -d "yesterday" +"%Y-%m-%d")
+        TODAY=$(date -u +"%Y-%m-%d")
+        git commit -m "Quay logs update: collected ${YESTERDAY} data on ${TODAY}"
+
+    - name: Push changes
+      if: steps.verify-changed-files.outputs.changed == 'true'
+      uses: ad-m/github-push-action@master
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        branch: ${{ github.ref }}
