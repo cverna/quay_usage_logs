@@ -153,12 +153,80 @@ def export_database_to_csv(csv_filename="quay_logs.csv"):
         return csv_filename
 
 
-def flatten_log_entry(entry):
+def get_tag_manifest_mapping(api_token, repository_path):
+    """
+    Fetch tag-to-manifest mappings for a repository from Quay.io API.
+
+    Args:
+        api_token (str): Your Quay.io OAuth2 access token.
+        repository_path (str): The full path of the repository (e.g., "namespace/reponame").
+
+    Returns:
+        tuple: (tag_to_manifest dict, manifest_to_tag dict) or (None, None) if error
+    """
+    tags_url = f"{QUAY_API_BASE_URL}/repository/{repository_path}/tag/"
+    headers = {"Authorization": f"Bearer {api_token}", "Accept": "application/json"}
+
+    tag_to_manifest = {}
+    manifest_to_tag = {}
+    page = 1
+
+    print(f"Fetching tag-manifest mappings for {repository_path}...")
+
+    try:
+        while True:
+            params = {"limit": 100, "page": page}
+            response = requests.get(tags_url, headers=headers, params=params)
+            response.raise_for_status()
+            data = response.json()
+
+            tags = data.get("tags", [])
+            if not tags:
+                break
+
+            for tag_info in tags:
+                tag_name = tag_info.get("name")
+                manifest_digest = tag_info.get("manifest_digest")
+
+                if tag_name and manifest_digest:
+                    tag_to_manifest[tag_name] = manifest_digest
+                    # Handle multiple tags pointing to same manifest
+                    if manifest_digest not in manifest_to_tag:
+                        manifest_to_tag[manifest_digest] = []
+                    manifest_to_tag[manifest_digest].append(tag_name)
+
+            # Check if there are more pages
+            if not data.get("has_additional", False):
+                break
+
+            page += 1
+
+        print(f"  Found {len(tag_to_manifest)} tags mapped to {len(manifest_to_tag)} unique manifests")
+        return tag_to_manifest, manifest_to_tag
+
+    except requests.exceptions.HTTPError as http_err:
+        print(f"HTTP error fetching tag mappings: {http_err}")
+        if response.status_code == 401:
+            print("Authentication error: Please ensure your token has read access to repository tags")
+        elif response.status_code == 403:
+            print("Authorization error: Token may not have permission to read repository tags")
+        return None, None
+    except requests.exceptions.RequestException as req_err:
+        print(f"Request error fetching tag mappings: {req_err}")
+        return None, None
+    except json.JSONDecodeError:
+        print(f"Failed to decode JSON from tag mapping response: {response.text}")
+        return None, None
+
+
+def flatten_log_entry(entry, tag_to_manifest=None, manifest_to_tag=None):
     """
     Flatten a single log entry into a dictionary suitable for CSV.
 
     Args:
         entry (dict): Single log entry from the JSON response
+        tag_to_manifest (dict, optional): Mapping of tag names to manifest digests
+        manifest_to_tag (dict, optional): Mapping of manifest digests to tag names
 
     Returns:
         dict: Flattened dictionary with all relevant fields
@@ -184,6 +252,19 @@ def flatten_log_entry(entry):
     flattened["namespace"] = metadata.get("namespace", "")
     flattened["manifest_digest"] = metadata.get("manifest_digest", "")
     flattened["tag"] = metadata.get("tag", "")
+
+    # Fill in missing tag/manifest information using mappings
+    if tag_to_manifest and manifest_to_tag:
+        # If we have tag but no manifest, try to fill manifest
+        if flattened["tag"] and not flattened["manifest_digest"]:
+            if flattened["tag"] in tag_to_manifest:
+                flattened["manifest_digest"] = tag_to_manifest[flattened["tag"]]
+
+        # If we have manifest but no tag, try to fill tag (use first tag if multiple)
+        elif flattened["manifest_digest"] and not flattened["tag"]:
+            if flattened["manifest_digest"] in manifest_to_tag:
+                # Use the first tag if multiple tags point to same manifest
+                flattened["tag"] = manifest_to_tag[flattened["manifest_digest"]][0]
 
     # Resolved IP information
     resolved_ip = metadata.get("resolved_ip", {})
@@ -449,9 +530,59 @@ if __name__ == "__main__":
 
         if logs is not None:
             if logs:
-                # Flatten all log entries
-                print("Processing log entries...")
-                flattened_logs = [flatten_log_entry(log) for log in logs]
+                # Fetch tag-manifest mappings before processing logs
+                print("\nFetching tag-manifest mappings...")
+                tag_to_manifest, manifest_to_tag = get_tag_manifest_mapping(
+                    quay_token, repository_path
+                )
+
+                if tag_to_manifest is None:
+                    print("Warning: Failed to fetch tag mappings. Processing without mapping enhancement.")
+                    tag_to_manifest, manifest_to_tag = {}, {}
+
+                # Flatten all log entries with mapping enhancement
+                print("Processing log entries with tag-manifest mapping...")
+                flattened_logs = []
+                filled_manifest_count = 0
+                filled_tag_count = 0
+                fill_examples = {"manifest_fills": [], "tag_fills": []}
+
+                for log in logs:
+                    original_tag = log.get("metadata", {}).get("tag", "")
+                    original_manifest = log.get("metadata", {}).get("manifest_digest", "")
+
+                    flattened = flatten_log_entry(log, tag_to_manifest, manifest_to_tag)
+                    flattened_logs.append(flattened)
+
+                    # Count and track examples of enhancements
+                    if original_tag and not original_manifest and flattened["manifest_digest"]:
+                        filled_manifest_count += 1
+                        if len(fill_examples["manifest_fills"]) < 3:  # Keep first 3 examples
+                            fill_examples["manifest_fills"].append((
+                                original_tag,
+                                flattened["manifest_digest"][:12] + "..."
+                            ))
+                    elif original_manifest and not original_tag and flattened["tag"]:
+                        filled_tag_count += 1
+                        if len(fill_examples["tag_fills"]) < 3:  # Keep first 3 examples
+                            fill_examples["tag_fills"].append((
+                                original_manifest[:12] + "...",
+                                flattened["tag"]
+                            ))
+
+                print(f"  Enhanced {filled_manifest_count} entries with manifest digests")
+                print(f"  Enhanced {filled_tag_count} entries with tags")
+
+                # Show examples of what was filled
+                if fill_examples["manifest_fills"]:
+                    print("  Examples of manifest fills:")
+                    for tag, manifest in fill_examples["manifest_fills"]:
+                        print(f"    tag '{tag}' -> manifest {manifest}")
+
+                if fill_examples["tag_fills"]:
+                    print("  Examples of tag fills:")
+                    for manifest, tag in fill_examples["tag_fills"]:
+                        print(f"    manifest {manifest} -> tag '{tag}'")
 
                 # Insert into database
                 inserted_count, duplicate_count = insert_logs_to_database(
@@ -462,6 +593,7 @@ if __name__ == "__main__":
                 print(f"  New records inserted: {inserted_count}")
                 print(f"  Duplicates skipped: {duplicate_count}")
                 print(f"  Total records processed: {len(logs)}")
+                print(f"  Tag-manifest enhancements: {filled_manifest_count + filled_tag_count}")
 
             else:
                 print(
