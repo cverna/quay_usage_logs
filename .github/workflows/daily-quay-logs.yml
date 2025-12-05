@@ -9,6 +9,8 @@ on:
 jobs:
   collect-logs:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
     - name: Checkout repository
@@ -74,7 +76,5 @@ jobs:
 
     - name: Push changes
       if: steps.verify-changed-files.outputs.changed == 'true'
-      uses: ad-m/github-push-action@master
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        branch: ${{ github.ref }}
+      run: |
+        git push origin HEAD:main
