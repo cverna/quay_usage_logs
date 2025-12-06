@@ -1,0 +1,73 @@
+name: Monthly Quay Usage Analysis
+
+on:
+  schedule:
+    # Run on the 1st day of every month at 02:00 UTC
+    - cron: '0 2 1 * *'
+  workflow_dispatch: # Allow manual triggering
+    inputs:
+      days:
+        description: 'Number of days to analyze (default: 30)'
+        required: false
+        default: '30'
+        type: string
+
+jobs:
+  analyze-quay-usage:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write # Required to commit files
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests pandas seaborn matplotlib python-dotenv
+
+    - name: Run Quay Growth Analyzer
+      env:
+        QUAY_API_TOKEN: ${{ secrets.QUAY_API_TOKEN }}
+      run: |
+        # Use input days if manually triggered, otherwise default to 30
+        DAYS="${{ github.event.inputs.days || '30' }}"
+        python quay_growth_analyzer.py --days $DAYS
+
+    - name: Set up Git
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+
+    - name: Generate commit message with current date
+      id: commit-info
+      run: |
+        CURRENT_DATE=$(date '+%Y-%m-%d')
+        echo "date=$CURRENT_DATE" >> $GITHUB_OUTPUT
+        echo "commit_message=📊 Monthly Quay usage analysis - $CURRENT_DATE" >> $GITHUB_OUTPUT
+
+    - name: Commit analysis results
+      run: |
+        # Add the generated files
+        git add quay_growth_data.csv
+        git add growth_chart_*.png
+
+        # Check if there are any changes to commit
+        if git diff --staged --quiet; then
+          echo "No changes to commit"
+          exit 0
+        fi
+
+        # Commit the changes
+        git commit -m "${{ steps.commit-info.outputs.commit_message }}"
+
+    - name: Push changes
+      run: |
+        git push
