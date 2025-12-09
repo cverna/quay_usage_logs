@@ -123,22 +123,80 @@ def fetch_all_repositories(api_token, start_time_str, end_time_str):
     return all_logs
 
 
-def save_to_csv(logs, filename=CSV_FILENAME):
-    """Save aggregated logs to CSV file"""
-    if not logs:
-        print("❌ No data to save")
+def load_existing_csv_data(filename=CSV_FILENAME):
+    """Load existing CSV data for merging purposes"""
+    if not os.path.exists(filename):
+        print(f"📄 No existing CSV file found at {filename}")
+        return []
+
+    print(f"📖 Loading existing data from {filename}")
+    existing_data = []
+
+    try:
+        with open(filename, 'r', encoding='utf-8') as csvfile:
+            reader = csv.DictReader(csvfile)
+            existing_data = list(reader)
+
+        print(f"✅ Loaded {len(existing_data)} existing records")
+        return existing_data
+
+    except Exception as e:
+        print(f"⚠️  Error loading existing CSV: {e}")
+        return []
+
+
+def merge_and_save_csv(new_logs, filename=CSV_FILENAME):
+    """Merge new logs with existing data and save to CSV file"""
+    if not new_logs:
+        print("❌ No new data to save")
         return False
 
-    print(f"💾 Saving data to {filename}")
+    print(f"💾 Merging and saving data to {filename}")
+
+    # Load existing data
+    existing_data = load_existing_csv_data(filename)
+
+    # Create a set of existing record keys for fast lookup
+    # Key format: "date|repo|kind"
+    existing_keys = set()
+    for record in existing_data:
+        key = f"{record.get('date', '')}|{record.get('repo', '')}|{record.get('kind', '')}"
+        existing_keys.add(key)
+
+    # Filter new logs to only include records not already in existing data
+    new_records = []
+    duplicate_count = 0
+
+    for log in new_logs:
+        key = f"{log.get('date', '')}|{log.get('repo', '')}|{log.get('kind', '')}"
+        if key not in existing_keys:
+            new_records.append(log)
+        else:
+            duplicate_count += 1
+
+    print(f"📊 Found {len(new_records)} new records, {duplicate_count} duplicates skipped")
+
+    if not new_records and existing_data:
+        print("✅ No new data to add - all records already exist in CSV")
+        return True
+
+    # Combine existing and new data
+    all_records = existing_data + new_records
 
     # Define column order
     columns = ['date', 'repo', 'kind', 'count', 'datetime_str']
 
+    # Save combined data
     with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=columns)
         writer.writeheader()
 
-        for log in logs:
+        # Write existing records
+        for record in existing_data:
+            writer.writerow(record)
+
+        # Write new records
+        for log in new_records:
             row = {
                 'date': log.get('date', ''),
                 'repo': log.get('repo', ''),
@@ -148,8 +206,14 @@ def save_to_csv(logs, filename=CSV_FILENAME):
             }
             writer.writerow(row)
 
-    print(f"✅ Saved {len(logs)} records to {filename}")
+    total_records = len(all_records)
+    print(f"✅ Saved {total_records} total records ({len(existing_data)} existing + {len(new_records)} new) to {filename}")
     return True
+
+
+def save_to_csv(logs, filename=CSV_FILENAME):
+    """Save aggregated logs to CSV file (legacy function - now calls merge_and_save_csv)"""
+    return merge_and_save_csv(logs, filename)
 
 
 def load_and_prepare_data(filename=CSV_FILENAME):
