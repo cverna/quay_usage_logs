@@ -29,11 +29,7 @@ date,repo,kind,count,datetime_str
 2025-12-06,fedora/fedora-bootc,pull_repo,3961,"Sat, 06 Dec 2025 00:00:00 -0000"
 2025-12-07,fedora/fedora-bootc,pull_repo,3690,"Sun, 07 Dec 2025 00:00:00 -0000"
 2025-12-08,fedora/fedora-bootc,pull_repo,7462,"Mon, 08 Dec 2025 00:00:00 -0000"
-<<<<<<< Updated upstream
-2025-12-09,fedora/fedora-bootc,pull_repo,3817,"Tue, 09 Dec 2025 00:00:00 -0000"
-=======
 2025-12-09,fedora/fedora-bootc,pull_repo,3819,"Tue, 09 Dec 2025 00:00:00 -0000"
->>>>>>> Stashed changes
 2025-11-09,fedora/fedora-bootc,push_repo,44,"Sun, 09 Nov 2025 00:00:00 -0000"
 2025-11-10,fedora/fedora-bootc,push_repo,22,"Mon, 10 Nov 2025 00:00:00 -0000"
 2025-11-11,fedora/fedora-bootc,push_repo,10,"Tue, 11 Nov 2025 00:00:00 -0000"
@@ -65,8 +61,6 @@ date,repo,kind,count,datetime_str
 2025-12-07,fedora/fedora-bootc,push_repo,17,"Sun, 07 Dec 2025 00:00:00 -0000"
 2025-12-08,fedora/fedora-bootc,push_repo,17,"Mon, 08 Dec 2025 00:00:00 -0000"
 2025-12-09,fedora/fedora-bootc,push_repo,17,"Tue, 09 Dec 2025 00:00:00 -0000"
-<<<<<<< Updated upstream
-=======
 2025-11-09,fedora/fedora-coreos,pull_repo,23818,"Sun, 09 Nov 2025 00:00:00 -0000"
 2025-11-10,fedora/fedora-coreos,pull_repo,26331,"Mon, 10 Nov 2025 00:00:00 -0000"
 2025-11-11,fedora/fedora-coreos,pull_repo,25197,"Tue, 11 Nov 2025 00:00:00 -0000"
@@ -137,4 +131,3 @@ date,repo,kind,count,datetime_str
 2025-12-01,fedora/fedora-coreos,delete_tag,3,"Mon, 01 Dec 2025 00:00:00 -0000"
 2025-12-02,fedora/fedora-coreos,delete_tag,3,"Tue, 02 Dec 2025 00:00:00 -0000"
 2025-12-05,fedora/fedora-coreos,delete_tag,3,"Fri, 05 Dec 2025 00:00:00 -0000"
->>>>>>> Stashed changes
