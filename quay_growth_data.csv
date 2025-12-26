@@ -164,3 +164,7 @@ date,repo,kind,count,datetime_str
 2025-12-22,fedora/fedora-bootc,push_repo,17,"Mon, 22 Dec 2025 00:00:00 -0000"
 2025-12-23,fedora/fedora-bootc,push_repo,17,"Tue, 23 Dec 2025 00:00:00 -0000"
 2025-12-24,fedora/fedora-bootc,push_repo,11,"Wed, 24 Dec 2025 00:00:00 -0000"
+2025-12-25,fedora/fedora-bootc,pull_repo,2718,"Thu, 25 Dec 2025 00:00:00 -0000"
+2025-12-26,fedora/fedora-bootc,pull_repo,1784,"Fri, 26 Dec 2025 00:00:00 -0000"
+2025-12-25,fedora/fedora-bootc,push_repo,17,"Thu, 25 Dec 2025 00:00:00 -0000"
+2025-12-26,fedora/fedora-bootc,push_repo,5,"Fri, 26 Dec 2025 00:00:00 -0000"
