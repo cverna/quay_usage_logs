@@ -6,10 +6,13 @@ on:
     - cron: '0 2 1 * *'
   workflow_dispatch: # Allow manual triggering
     inputs:
-      days:
-        description: 'Number of days to analyze (default: 30)'
+      month:
+        description: 'Month to analyze (e.g., Jan, Feb, Mar). Defaults to previous month.'
         required: false
-        default: '30'
+        type: string
+      year:
+        description: 'Year (e.g., 2026). Defaults to current year.'
+        required: false
         type: string
 
 jobs:
@@ -33,13 +36,39 @@ jobs:
         python -m pip install --upgrade pip
         pip install requests pandas seaborn matplotlib python-dotenv
 
+    - name: Calculate date range
+      id: dates
+      run: |
+        MONTH_INPUT="${{ github.event.inputs.month }}"
+        YEAR_INPUT="${{ github.event.inputs.year }}"
+        
+        if [ -n "$MONTH_INPUT" ]; then
+          # Use provided month (and year if given)
+          YEAR="${YEAR_INPUT:-$(date +%Y)}"
+          # Convert month name to number (e.g., Jan -> 01)
+          MONTH_NUM=$(date -d "1 $MONTH_INPUT $YEAR" +%m 2>/dev/null || date -d "$MONTH_INPUT 1 $YEAR" +%m)
+          # First day of the specified month
+          START_DATE="$YEAR-$MONTH_NUM-01"
+          # Last day of the specified month
+          END_DATE=$(date -d "$YEAR-$MONTH_NUM-01 +1 month -1 day" +%Y-%m-%d)
+        else
+          # Default: calculate previous month's date range
+          # Get first day of current month, then subtract 1 day to get last day of previous month
+          END_DATE=$(date -d "$(date +%Y-%m-01) -1 day" +%Y-%m-%d)
+          # Get first day of previous month
+          START_DATE=$(date -d "$(date +%Y-%m-01) -1 month" +%Y-%m-01)
+        fi
+        
+        echo "start_date=$START_DATE" >> $GITHUB_OUTPUT
+        echo "end_date=$END_DATE" >> $GITHUB_OUTPUT
+        echo "Calculated date range: $START_DATE to $END_DATE"
+
     - name: Run Quay Growth Analyzer
       env:
         QUAY_API_TOKEN: ${{ secrets.QUAY_API_TOKEN }}
       run: |
-        # Use input days if manually triggered, otherwise default to 30
-        DAYS="${{ github.event.inputs.days || '30' }}"
-        python quay_growth_analyzer.py --days $DAYS
+        echo "Analyzing data from ${{ steps.dates.outputs.start_date }} to ${{ steps.dates.outputs.end_date }}"
+        python quay_growth_analyzer.py --start-date ${{ steps.dates.outputs.start_date }} --end-date ${{ steps.dates.outputs.end_date }}
 
     - name: Set up Git
       run: |
@@ -55,8 +84,8 @@ jobs:
 
     - name: Commit analysis results
       run: |
-        # Add the generated files
-        git add quay_growth_data.csv
+        # Add the generated files (JSON summary and charts - CSV is gitignored)
+        git add monthly_growth_summary.json
         git add growth_chart_*.png
 
         # Check if there are any changes to commit
