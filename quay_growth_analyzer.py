@@ -246,7 +246,7 @@ def load_and_prepare_data(filename=CSV_FILENAME):
 
 
 def create_monthly_growth_charts(pull_data):
-    """Create monthly growth charts for each repository"""
+    """Create monthly growth charts for each repository (from DataFrame)"""
     print("📊 Creating monthly growth charts...")
 
     # Aggregate by month and repository
@@ -307,6 +307,83 @@ def create_monthly_growth_charts(pull_data):
         plt.savefig(filename, dpi=150, bbox_inches='tight')
         print(f"📈 Generated growth chart for {repo} → {filename}")
         plt.close()
+
+
+def create_charts_from_summary(filename=SUMMARY_FILENAME):
+    """Create monthly growth charts from the JSON summary file (for CI/CD use)"""
+    print("📊 Creating monthly growth charts from summary...")
+
+    if not os.path.exists(filename):
+        print(f"❌ Summary file {filename} not found")
+        return False
+
+    with open(filename, 'r', encoding='utf-8') as f:
+        summary = json.load(f)
+
+    repositories = summary.get('repositories', {})
+    if not repositories:
+        print("❌ No repository data in summary")
+        return False
+
+    # Set up the plotting style
+    sns.set_style("whitegrid")
+    plt.style.use('default')
+
+    # Define colors for repositories
+    repo_colors = {
+        'fedora/fedora-coreos': 'steelblue',
+        'fedora/fedora-bootc': 'darkorange'
+    }
+
+    for repo, data in sorted(repositories.items()):
+        monthly_pulls = data.get('monthly_pulls', {})
+
+        if not monthly_pulls:
+            print(f"⚠️  No data for {repo}")
+            continue
+
+        # Sort by month
+        months = sorted(monthly_pulls.keys())
+        counts = [monthly_pulls[m] for m in months]
+
+        plt.figure(figsize=(12, 6))
+
+        # Create line plot with markers
+        plt.plot(months, counts,
+                marker='o', linewidth=3, markersize=8,
+                color=repo_colors.get(repo, 'blue'),
+                markerfacecolor='white', markeredgewidth=2)
+
+        # Customize the plot
+        repo_name = repo.replace('fedora/', '').title()
+        plt.title(f'{repo_name} - Monthly Pull Growth', fontsize=16, fontweight='bold')
+        plt.xlabel('Month', fontsize=12)
+        plt.ylabel('Total Monthly Pulls', fontsize=12)
+
+        # Add value labels on points
+        for month, count in zip(months, counts):
+            plt.annotate(f'{count:,}',
+                        (month, count),
+                        textcoords="offset points",
+                        xytext=(0, 10),
+                        ha='center', fontweight='bold')
+
+        # Format y-axis with commas
+        ax = plt.gca()
+        ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: format(int(x), ',')))
+
+        # Rotate x-axis labels for better readability
+        plt.xticks(rotation=45)
+        plt.grid(True, alpha=0.3)
+        plt.tight_layout()
+
+        # Save plot to file
+        chart_filename = f"growth_chart_{repo.replace('/', '_')}.png"
+        plt.savefig(chart_filename, dpi=150, bbox_inches='tight')
+        print(f"📈 Generated growth chart for {repo} → {chart_filename}")
+        plt.close()
+
+    return True
 
 
 def load_existing_summary(filename=SUMMARY_FILENAME):
@@ -510,8 +587,8 @@ def main():
     # Save monthly summary JSON (for git tracking)
     save_monthly_summary(pull_data)
 
-    # Create visualizations
-    create_monthly_growth_charts(pull_data)
+    # Create visualizations from JSON summary (includes all historical data)
+    create_charts_from_summary()
 
     print(f"\n✅ Analysis complete! Individual growth charts generated.")
     print(f"📁 Raw data saved in: {CSV_FILENAME} (local only)")
