@@ -24,6 +24,12 @@ ENV/
 .DS_Store
 Thumbs.db
 
-# Data files
+# Data files (raw data - local only)
 *.csv
 *.db
+
+# Generated charts (can be regenerated)
+growth_chart_*.png
+
+# Keep monthly summary JSON tracked (small, aggregated data)
+!monthly_growth_summary.json

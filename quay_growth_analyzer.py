@@ -24,6 +24,7 @@ REPOSITORIES = [
     "fedora/fedora-coreos",
 ]
 CSV_FILENAME = "quay_growth_data.csv"
+SUMMARY_FILENAME = "monthly_growth_summary.json"
 
 
 def get_quay_repository_aggregated_logs(api_token, repository_path, start_time_str, end_time_str):
@@ -308,6 +309,83 @@ def create_monthly_growth_charts(pull_data):
         plt.close()
 
 
+def load_existing_summary(filename=SUMMARY_FILENAME):
+    """Load existing monthly summary JSON for merging"""
+    if not os.path.exists(filename):
+        print(f"📄 No existing summary file found at {filename}")
+        return {}
+
+    print(f"📖 Loading existing summary from {filename}")
+    try:
+        with open(filename, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        print(f"✅ Loaded summary with {len(data.get('repositories', {}))} repositories")
+        return data
+    except Exception as e:
+        print(f"⚠️  Error loading existing summary: {e}")
+        return {}
+
+
+def save_monthly_summary(pull_data, filename=SUMMARY_FILENAME):
+    """Generate and save monthly summary JSON file for git tracking"""
+    print(f"\n💾 Generating monthly summary to {filename}")
+
+    # Load existing summary to merge with
+    existing_summary = load_existing_summary(filename)
+    existing_repos = existing_summary.get('repositories', {})
+
+    # Aggregate by month and repository
+    monthly_data = pull_data.groupby(['repo', 'month'])['count'].sum().reset_index()
+
+    # Build summary structure
+    repositories = {}
+
+    for repo in sorted(pull_data['repo'].unique()):
+        repo_data = monthly_data[monthly_data['repo'] == repo].sort_values('month')
+
+        # Start with existing data for this repo
+        monthly_pulls = existing_repos.get(repo, {}).get('monthly_pulls', {})
+
+        # Add/update with new data
+        for _, row in repo_data.iterrows():
+            month_str = str(row['month'])
+            monthly_pulls[month_str] = int(row['count'])
+
+        # Sort by month
+        monthly_pulls = dict(sorted(monthly_pulls.items()))
+
+        # Calculate statistics
+        pulls_list = list(monthly_pulls.values())
+        total_pulls = sum(pulls_list)
+
+        repositories[repo] = {
+            'monthly_pulls': monthly_pulls,
+            'total_pulls': total_pulls,
+            'months_tracked': len(monthly_pulls)
+        }
+
+        # Add growth percentage if we have more than one month
+        if len(pulls_list) > 1:
+            months = list(monthly_pulls.keys())
+            first_month_pulls = monthly_pulls[months[0]]
+            last_month_pulls = monthly_pulls[months[-1]]
+            if first_month_pulls > 0:
+                growth_pct = ((last_month_pulls - first_month_pulls) / first_month_pulls) * 100
+                repositories[repo]['overall_growth_pct'] = round(growth_pct, 2)
+
+    summary = {
+        'last_updated': datetime.now(timezone.utc).isoformat(),
+        'repositories': repositories
+    }
+
+    # Save to JSON
+    with open(filename, 'w', encoding='utf-8') as f:
+        json.dump(summary, f, indent=2)
+
+    print(f"✅ Saved monthly summary to {filename}")
+    return summary
+
+
 def print_monthly_summary(pull_data):
     """Print monthly summary statistics"""
     monthly_data = pull_data.groupby(['repo', 'month'])['count'].sum().reset_index()
@@ -429,11 +507,15 @@ def main():
     # Print summary
     print_monthly_summary(pull_data)
 
+    # Save monthly summary JSON (for git tracking)
+    save_monthly_summary(pull_data)
+
     # Create visualizations
     create_monthly_growth_charts(pull_data)
 
     print(f"\n✅ Analysis complete! Individual growth charts generated.")
-    print(f"📁 Data saved in: {CSV_FILENAME}")
+    print(f"📁 Raw data saved in: {CSV_FILENAME} (local only)")
+    print(f"📁 Monthly summary saved in: {SUMMARY_FILENAME} (tracked in git)")
 
 
 if __name__ == "__main__":
