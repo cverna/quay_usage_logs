@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-10-01T08:25:03.410351+00:00",
+  "last_updated": "2026-11-01T08:50:00.741539+00:00",
   "repositories": {
     "fedora/fedora-bootc": {
       "monthly_pulls": {
@@ -13,11 +13,12 @@
         "2026-06": 164935,
         "2026-07": 264180,
         "2026-08": 301992,
-        "2026-09": 349881
+        "2026-09": 349881,
+        "2026-10": 408893
       },
-      "total_pulls": 2371963,
-      "months_tracked": 11,
-      "overall_growth_pct": 155.91
+      "total_pulls": 2780856,
+      "months_tracked": 12,
+      "overall_growth_pct": 199.08
     },
     "fedora/fedora-coreos": {
       "monthly_pulls": {
@@ -31,11 +32,12 @@
         "2026-06": 1462750,
         "2026-07": 1573244,
         "2026-08": 1465877,
-        "2026-09": 1387009
+        "2026-09": 1387009,
+        "2026-10": 1603316
       },
-      "total_pulls": 13821305,
-      "months_tracked": 11,
-      "overall_growth_pct": 33.96
+      "total_pulls": 15424621,
+      "months_tracked": 12,
+      "overall_growth_pct": 54.85
     }
   }
 }
